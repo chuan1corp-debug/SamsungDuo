@@ -1004,6 +1004,12 @@ final class TrioState {
         if (isAirplaneModeOn(context)) {
             type = "";
         }
+        // ★ 关闭移动数据：原生 5G/LTE 数据类指示会随之消失，胶囊制式文字也留空
+        //   （与飞行模式一致）。getDataNetworkType() 在关流量后仍返回驻留小区制式
+        //   （手机仍驻留 5G 给 VoLTE/语音用），不会自动变空，所以这里手动清。
+        if (!type.isEmpty() && !isMobileDataOn(context)) {
+            type = "";
+        }
         // ★ 无服务/飞行模式时清空旧类型（去掉原先「只写不清」的守卫，否则 5G 会残留）。
         //   首次取到非空后才允许清空，避免开机 SIM 未就绪瞬间闪空。
         if (!type.isEmpty()) {
@@ -1663,6 +1669,24 @@ final class TrioState {
             return on == 1;
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    /** 默认数据卡移动数据是否开启（TelephonyManager.isDataEnabled，API26+）。
+     *  关掉流量时返回 false；异常时保守返回 true（不误清制式文字）。 */
+    private static boolean isMobileDataOn(Context ctx) {
+        try {
+            if (ctx == null) {
+                return true;
+            }
+            final TelephonyManager tel =
+                    (TelephonyManager) ctx.getSystemService(Context.TELEPHONY_SERVICE);
+            if (tel == null) {
+                return true;
+            }
+            return tel.isDataEnabled();
+        } catch (Throwable ignored) {
+            return true;
         }
     }
 
