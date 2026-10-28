@@ -66,6 +66,8 @@ final class TrioState {
     static volatile boolean sWifiPresent = false; // 三星：连上才显示
     static volatile boolean sIslandHideBattery = false; // One UI 无超级岛，恒 false
     static volatile String sMobileType = "";
+    /** ★ 是否已取到过非空网络类型：用于「无服务/飞行模式」时清空旧 5G，避免残留。 */
+    static volatile boolean sMobileTypeSeen = false;
     static final int SIM_SLOTS = 2;
     static volatile int[] sSlotLevels = { -1, -1 };
     static volatile int sDataSlot = -1;
@@ -985,11 +987,6 @@ final class TrioState {
                         dataSlot = slot;
                         type = networkTypeLabel(tel, subId);
                     }
-                    if (slot < 0 || slot >= SIM_SLOTS) {
-                        continue;
-                    }
-                    levels[slot] = levelOf(tel, subId);
-                    // 只记录数据卡的原始读数，避免双卡时被非数据卡覆盖
                     if (subId == dataSubId) {
                         // 由 levelOf 内部写入 sLastRaw*
                     }
@@ -1003,8 +1000,17 @@ final class TrioState {
         //   导致 refresh() 只能靠"数据卡回退"取值。
         sMobileLevel = (dataSlot >= 0 && dataSlot < SIM_SLOTS)
                 ? levels[dataSlot] : -1;
+        // ★ 飞行模式：强制无类型（原生飞机图标由三星自带状态栏显示，胶囊留空）。
+        if (isAirplaneModeOn(context)) {
+            type = "";
+        }
+        // ★ 无服务/飞行模式时清空旧类型（去掉原先「只写不清」的守卫，否则 5G 会残留）。
+        //   首次取到非空后才允许清空，避免开机 SIM 未就绪瞬间闪空。
         if (!type.isEmpty()) {
             sMobileType = type;
+            sMobileTypeSeen = true;
+        } else if (sMobileTypeSeen) {
+            sMobileType = "";
         }
         // ★ v56：首次采样成功后，**只读** dump 一次真实阈值配置。
         //   不改任何显示逻辑；跑在独立线程，避免在 UI 线程做上百次文件写。
@@ -1643,6 +1649,21 @@ final class TrioState {
             return 1;
         }
         return 0;
+    }
+
+    /** 飞行模式是否开启（Settings.Global，随系统实时读，不依赖广播时序）。 */
+    private static boolean isAirplaneModeOn(Context ctx) {
+        try {
+            if (ctx == null) {
+                return false;
+            }
+            final int on = android.provider.Settings.Global.getInt(
+                    ctx.getContentResolver(),
+                    android.provider.Settings.Global.AIRPLANE_MODE_ON, 0);
+            return on == 1;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /** 把数据卡的网络类型映射成状态栏标签："5G"/"4G"/"H+"/"3G"/"E"/"2G"，未知为空。 */

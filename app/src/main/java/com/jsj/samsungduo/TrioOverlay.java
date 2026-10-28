@@ -775,6 +775,10 @@ public final class TrioOverlay {
             //     ② 宽度兜底：不超过 容器宽 × SIZE_RATIO
             //     ③ 高度硬上限：不超过 容器高 × HEIGHT_RATIO（保证不被裁）
             final int containerW = parent.getWidth();
+            // ★ 反馈环修复：胶囊尺寸绝不能拿「挂载容器宽度」去夹 —— 该容器里包含胶囊
+            //   自身，原生图标消失使其变窄 ⇒ 胶囊被夹更小 ⇒ 容器更窄，runaway。改用
+            //   状态栏根宽（整条栏、稳定、不含该反馈），胶囊尺寸只由缩放+行高决定。
+            final int rootW = (statusBarRoot != null) ? statusBarRoot.getWidth() : containerW;
             // ★ v51：wantWidth() 给出的是期望的【墨迹边长】（真正看到的图形大小）。
             //   视图边长要把 TrioRenderer.INK_INSET 的防贴边余量补回来，
             //   否则加了余量图形会跟着缩 6%。
@@ -864,8 +868,8 @@ public final class TrioOverlay {
             //   会超出容器 25%，把原生图标挤掉）。
             if (isCapsuleStyle()) {
                 w = TrioRenderer.capsuleViewWidth(h);
-                if (containerW > 0) {
-                    final int limit = (int) (containerW * CAPSULE_CONTAINER_RATIO);
+                if (rootW > 0) {
+                    final int limit = (int) (rootW * CAPSULE_CONTAINER_RATIO);
                     if (w > limit) {
                         w = limit;
                         h = TrioRenderer.capsuleViewHeight(w);
