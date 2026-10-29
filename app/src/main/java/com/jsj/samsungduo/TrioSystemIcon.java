@@ -47,6 +47,13 @@ final class TrioSystemIcon {
         /** 墨迹宽高，单位为 mask 像素。 */
         float w;
         float h;
+        /**
+         * ★ L80：笔画粗细，单位为 mask 像素（量不到为 0）。
+         *
+         * <p>取所有横向连续段的**最短**者 —— 箭头的竖杆最接近真实笔画宽，
+         * 斜边在横向上会被拉长，不能拿来当笔画宽。
+         */
+        float stroke;
     }
 
     private static final Paint PAINT =
@@ -164,11 +171,55 @@ final class TrioSystemIcon {
             sh.mask = mask;
             sh.w = w;
             sh.h = h;
+            sh.stroke = thinnestRun(out, w, h);
             sShapes.put(resId, sh);
             return sh;
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    /**
+     * ★ L80：量笔画粗细 —— 所有横向连续墨迹段里**最短**的那一段（单位：mask 像素）。
+     *
+     * <p>箭头的斜边在横向上会被拉长（一段斜边横跨十几像素），竖杆才是真实笔画宽，
+     * 所以取最短段。1 像素宽的零星抗锯齿碎块不计入。
+     *
+     * @return 量不到返回 0
+     */
+    private static float thinnestRun(int[] px, int w, int h) {
+        int thinnest = Integer.MAX_VALUE;
+        for (int y = 0; y < h; y++) {
+            int run = 0;
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) != 0) {
+                    run++;
+                } else if (run > 0) {
+                    if (run > 1 && run < thinnest) {
+                        thinnest = run;
+                    }
+                    run = 0;
+                }
+            }
+            if (run > 1 && run < thinnest) {
+                thinnest = run;
+            }
+        }
+        return (thinnest == Integer.MAX_VALUE) ? 0f : thinnest;
+    }
+
+    /**
+     * ★ L80：该图标在给定画面墨迹高下的**笔画粗细**（画面单位，与 inkH 同尺度）。
+     *
+     * <p>斜杠要跟箭头一样粗 —— 拍一个固定比例总是偏细，这里直接量。
+     * 量不到时退回 {@code inkH × 0.1}（三星 24 网格的常规笔画比例）。
+     */
+    static float strokeWidth(int resId, float inkH) {
+        final Shape sh = shape(resId);
+        if (sh == null || inkH <= 0f || sh.h <= 0f || sh.stroke <= 0f) {
+            return inkH * 0.1f;
+        }
+        return sh.stroke * (inkH / sh.h);
     }
 
     /**

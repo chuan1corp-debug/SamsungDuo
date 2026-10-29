@@ -48,11 +48,12 @@ final class TrioRenderer {
     /** ★ L79：两个箭头之间的缝（占图标总高的比例）。 */
     private static final float DATA_ARROW_GAP = 0.10f;
     /**
-     * ★ L80：斜杠实际横跨箭头组宽度的比例（1 = 满跨；越小越短）。
+     * ★ L80：斜杠实际横跨箭头组宽度的比例（1 = 正好盖满两个箭头的外缘）。
      *
-     * <p>用户参考图里那条线只横跨两个箭头的中间，两端都留白 ⇒ 取 0.62。
+     * <p>0.62 那版两端各缩进近两成，用户实测"太短了"，改到 1.15：
+     * 两端各超出箭头外缘约 7%，像把整组划掉。
      */
-    private static final float SLASH_SPAN = 0.62f;
+    private static final float SLASH_SPAN = 1.15f;
     private static final Path BOLT = buildBolt();
     private static final Path WIFI_DOT = buildWifiDot();
     private static final RectF ARC = new RectF();
@@ -1345,7 +1346,7 @@ final class TrioRenderer {
             return;
         }
         if (!TrioState.sMobileDataOn) {
-            drawDataArrows(c, cx, cy, inkH, fg, 0f);
+            drawDataArrows(c, cx, cy, inkH, fg);
         }
     }
 
@@ -2241,8 +2242,7 @@ final class TrioRenderer {
      * <p>★ L79 修正：上一版用的是 tw_ic_do_mobiledata，那本身就是「圆圈+斜杠」的
      * 禁行样式（用户实机看到"圈加斜杠"），不是要的上下箭头。
      */
-    private static void drawDataArrows(Canvas c, float cx, float cy, float inkH, int fg,
-                                       float stroke) {
+    private static void drawDataArrows(Canvas c, float cx, float cy, float inkH, int fg) {
         final int inId = TrioState.sDataInResId;
         final int outId = TrioState.sDataOutResId;
         if (inId == 0 && outId == 0) {
@@ -2265,37 +2265,42 @@ final class TrioRenderer {
         if (wOut > 0f) {
             TrioSystemIcon.draw(c, outId, x + wOut * 0.5f, cy, arrowH, fg, 0f);
         }
-        // ★ L80：斜杠 —— 10°、只跨箭头组中间一段、以组中心对称（详见 drawDiagonalSlash）。
-        drawDiagonalSlash(c, cx, cy, inkH, fg, stroke, totalW);
+        // ★ L80：斜杠 —— 10°、横跨整组箭头并两端各出一点头（详见 drawDiagonalSlash）。
+        //   线宽取箭头的**实测笔画宽**，斜线才不会比箭头细一圈。
+        drawDiagonalSlash(c, cx, cy,
+                TrioSystemIcon.strokeWidth(outId != 0 ? outId : inId, arrowH),
+                fg, totalW);
     }
 
     /**
      * ★ L80：在图标之上叠一条斜杠（禁用符样式，左上 → 右下）。
      *
-     * <p>★ L80 修正：上一版是 45° 全长斜线（halfH = h×0.42、halfW = 组宽一半），
-     * 结果斜杠贯穿整个图标区域、把两个箭头串成一坨，还多出两条假笔画（用户实测
-     * "4 个箭头""线太长了还不对称"）。现在改成：
      * <ul>
      *   <li>角度固定 10°（用户参考图认可的角度）；</li>
-     *   <li>横向只跨箭头组的中间一段，两端留白、不越出箭头；</li>
+     *   <li>横向跨过整组箭头并两端各出一点头；</li>
      *   <li>以箭头组中心对称（不再一头长一头短）；</li>
-     *   <li>线宽与箭头笔画同量级，不再是一根粗杠。</li>
+     *   <li>线宽 = 箭头自己的笔画宽（由 {@link TrioSystemIcon#strokeWidth} 量出来），
+     *       不再拍一个固定比例 —— 拍出来的那个数总比箭头细。</li>
      * </ul>
      *
+     * @param w     斜杠线宽（与箭头笔画同宽）
      * @param spanW 箭头组总宽；斜杠实际横跨 = spanW × SLASH_SPAN
      */
-    private static void drawDiagonalSlash(Canvas c, float cx, float cy, float h, int fg,
-                                          float stroke, float spanW) {
-        if (spanW <= 0f) {
+    private static void drawDiagonalSlash(Canvas c, float cx, float cy, float w, int fg,
+                                          float spanW) {
+        if (spanW <= 0f || w <= 0f) {
             return;
         }
         // 10°：水平半长的 tan(10°)
         final float halfW = spanW * 0.5f * SLASH_SPAN;
         final float halfH = halfW * 0.1763f;
         FILL.setStyle(Paint.Style.STROKE);
-        FILL.setStrokeWidth(Math.max(h * 0.09f, 1.2f));
+        FILL.setStrokeWidth(w);
+        FILL.setStrokeCap(Paint.Cap.ROUND);
         FILL.setColor(fg);
         c.drawLine(cx - halfW, cy - halfH, cx + halfW, cy + halfH, FILL);
+        // FILL 是共享画笔，用完还原，别把圆头带给下一位使用者。
+        FILL.setStrokeCap(Paint.Cap.BUTT);
         FILL.setStyle(Paint.Style.FILL);
     }
 
