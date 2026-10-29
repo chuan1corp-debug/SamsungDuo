@@ -47,6 +47,12 @@ final class TrioRenderer {
     private static final float DATA_ARROW_H = 0.86f;
     /** ★ L79：两个箭头之间的缝（占图标总高的比例）。 */
     private static final float DATA_ARROW_GAP = 0.10f;
+    /**
+     * ★ L80：斜杠实际横跨箭头组宽度的比例（1 = 满跨；越小越短）。
+     *
+     * <p>用户参考图里那条线只横跨两个箭头的中间，两端都留白 ⇒ 取 0.62。
+     */
+    private static final float SLASH_SPAN = 0.62f;
     private static final Path BOLT = buildBolt();
     private static final Path WIFI_DOT = buildWifiDot();
     private static final RectF ARC = new RectF();
@@ -1280,11 +1286,22 @@ final class TrioRenderer {
      *
      * <p>Reached only when the percentage is not claiming the centre, so this
      * never competes with the value for the same space.
+     *
+     * <p>★ L80：制式文字为空（飞行模式 / 关移动数据）时改画状态图标 ——
+     * 飞机或数据上下箭头，尺寸与同格的 5G 文字同高。
      */
     private static void drawCentreType(Canvas c, String type, int fg, TrioAppearance a) {
         final float requested = a.typeSize;
         final float clear = TrioGeometry.centreClearWidth(requested, a.ringStroke);
         applyWeight(a.typeWeight);
+        if (type == null || type.isEmpty()) {
+            // ★ L80：飞行 / 关数据 → 圈内画状态图标（文字槽已被占用，见 TrioAppearance.Ring）。
+            final float size = Math.min(requested, clear);
+            final float capH = size * TrioGeometry.CAP_HEIGHT_RATIO;
+            final float cy = TrioGeometry.centerBaseline(size) - capH * 0.5f;
+            drawSlotIcon(c, TrioGeometry.VALUE_X, cy, capH, fg);
+            return;
+        }
         final float size = fitSize(type, requested, clear, a.typeSuffixScale);
         drawType(c, type, TrioGeometry.VALUE_X, TrioGeometry.centerBaseline(size),
                 size, fg, a, a.typeSuffixScale);
@@ -1295,14 +1312,41 @@ final class TrioRenderer {
      * percentage has taken the ring centre, which is what the centred-value
      * setting promises, and the notch is otherwise empty: the type is squeezed
      * down to whatever the narrower slot affords rather than being dropped.
+     *
+     * <p>★ L80：制式文字为空时改画状态图标。
      */
     private static void drawGapType(Canvas c, String type, int fg, TrioAppearance a) {
         final float requested = a.typeSize;
         final float clear = TrioGeometry.gapClearWidth(a.ringStroke);
         applyWeight(a.typeWeight);
+        if (type == null || type.isEmpty()) {
+            final float size = Math.min(requested, clear);
+            final float capH = size * TrioGeometry.CAP_HEIGHT_RATIO;
+            final float cy = TrioGeometry.gapBaseline(size) - capH * 0.5f;
+            drawSlotIcon(c, TrioGeometry.VALUE_X, cy, capH, fg);
+            return;
+        }
         final float size = fitSize(type, requested, clear, a.typeSuffixScale);
         drawType(c, type, TrioGeometry.VALUE_X, TrioGeometry.gapBaseline(size),
                 size, fg, a, a.typeSuffixScale);
+    }
+
+    /**
+     * ★ L80：信号槽的状态图标（飞行模式 ⇒ 飞机；关移动数据 ⇒ 数据上下箭头 + 斜杠）。
+     *
+     * <p>与胶囊那条路径共用同一套画法，保证两种样式的图标完全一致。
+     *
+     * @param capH 该槽位里 5G 文字本该有的 cap 高 —— 图标按它定尺寸，两者看起来一样大
+     */
+    private static void drawSlotIcon(Canvas c, float cx, float cy, float capH, int fg) {
+        final float inkH = capH * STATE_ICON_SCALE;
+        if (TrioState.sAirplaneMode) {
+            TrioSystemIcon.draw(c, TrioState.sAirplaneResId, cx, cy, inkH, fg, -90f);
+            return;
+        }
+        if (!TrioState.sMobileDataOn) {
+            drawDataArrows(c, cx, cy, inkH, fg, 0f);
+        }
     }
 
     /**
@@ -2182,17 +2226,12 @@ final class TrioRenderer {
      * <p>高度用**同一格里 5G 文字的 cap 高**，而不是 em 值 —— em 是字号，
      * 图标按 em 画会跟文字差一个比例。
      * 飞行模式画三星飞机（向左转 90°）；关移动数据画三星上下箭头 + 一条斜杠。
+     *
+     * <p>★ L80：与圆环那条路径统一走 {@link #drawSlotIcon}，两种样式的图标完全一致。
      */
     private static void drawSignalStateIcon(Canvas c, float cx, float cy, float stroke,
                                              int fg, float capH) {
-        final float inkH = capH * STATE_ICON_SCALE;
-        if (TrioState.sAirplaneMode) {
-            TrioSystemIcon.draw(c, TrioState.sAirplaneResId, cx, cy, inkH, fg, -90f);
-            return;
-        }
-        if (!TrioState.sMobileDataOn) {
-            drawDataArrows(c, cx, cy, inkH, fg, stroke);
-        }
+        drawSlotIcon(c, cx, cy, capH, fg);
     }
 
     /**
@@ -2226,21 +2265,35 @@ final class TrioRenderer {
         if (wOut > 0f) {
             TrioSystemIcon.draw(c, outId, x + wOut * 0.5f, cy, arrowH, fg, 0f);
         }
-        // 斜杠：跨过整组箭头（左上 → 右下）。
+        // ★ L80：斜杠 —— 10°、只跨箭头组中间一段、以组中心对称（详见 drawDiagonalSlash）。
         drawDiagonalSlash(c, cx, cy, inkH, fg, stroke, totalW);
     }
 
     /**
-     * ★ L79：在图标之上叠一条斜杠（禁用符样式，左上 → 右下）。
+     * ★ L80：在图标之上叠一条斜杠（禁用符样式，左上 → 右下）。
      *
-     * @param spanW 这条斜杠要跨过的总宽（箭头组的宽），0 = 按高度取
+     * <p>★ L80 修正：上一版是 45° 全长斜线（halfH = h×0.42、halfW = 组宽一半），
+     * 结果斜杠贯穿整个图标区域、把两个箭头串成一坨，还多出两条假笔画（用户实测
+     * "4 个箭头""线太长了还不对称"）。现在改成：
+     * <ul>
+     *   <li>角度固定 10°（用户参考图认可的角度）；</li>
+     *   <li>横向只跨箭头组的中间一段，两端留白、不越出箭头；</li>
+     *   <li>以箭头组中心对称（不再一头长一头短）；</li>
+     *   <li>线宽与箭头笔画同量级，不再是一根粗杠。</li>
+     * </ul>
+     *
+     * @param spanW 箭头组总宽；斜杠实际横跨 = spanW × SLASH_SPAN
      */
     private static void drawDiagonalSlash(Canvas c, float cx, float cy, float h, int fg,
                                           float stroke, float spanW) {
-        final float halfH = h * 0.42f;
-        final float halfW = (spanW > 0f) ? spanW * 0.5f : halfH;
+        if (spanW <= 0f) {
+            return;
+        }
+        // 10°：水平半长的 tan(10°)
+        final float halfW = spanW * 0.5f * SLASH_SPAN;
+        final float halfH = halfW * 0.1763f;
         FILL.setStyle(Paint.Style.STROKE);
-        FILL.setStrokeWidth(Math.max(stroke * 0.5f, 1.5f));
+        FILL.setStrokeWidth(Math.max(h * 0.09f, 1.2f));
         FILL.setColor(fg);
         c.drawLine(cx - halfW, cy - halfH, cx + halfW, cy + halfH, FILL);
         FILL.setStyle(Paint.Style.FILL);

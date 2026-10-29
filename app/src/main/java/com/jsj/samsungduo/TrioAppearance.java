@@ -424,7 +424,16 @@ public final class TrioAppearance {
                      String mobileType, int sims) {
             wifi = a.wifiInk(wifiLevel);
             bolt = charging && a.drawsBolt();
-            final boolean type = a.typeInRing && mobileType != null && !mobileType.isEmpty();
+            // ★ L80：类型槽占用的判定。
+            //   原来只看「制式文字非空」：飞行模式 / 关移动数据时文字被清空 ⇒ 这里
+            //   认为类型槽空着 ⇒ valueCentreDefault 里的 (!wifi && !type) 成立 ⇒
+            //   电量数字顶进圈心，把整个圆环布局打乱（用户实测"开启飞行模式，圈内
+            //   直接变成了电量数字"）。
+            //   现在：制式文字非空 **或** 该槽位要画状态图标（飞机 / 数据箭头），
+            //   都算类型槽被占用 —— 圈内画图标，而不是让数字挤进来。
+            final boolean typeText = a.typeInRing && mobileType != null && !mobileType.isEmpty();
+            final boolean typeIcon = a.typeInRing && TrioState.slotIconActive();
+            final boolean type = typeText || typeIcon;
             final boolean hasValue = a.value && level >= 0;
 
             // The plug, not the bolt: charging suppresses the second row whether

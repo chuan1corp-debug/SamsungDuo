@@ -26,6 +26,17 @@ final class TrioSystemIcon {
     /** 栅格化分辨率：够量清墨迹边界即可（128 已远超状态栏实际像素）。 */
     private static final int RASTER = 128;
 
+    /**
+     * ★ L80：主体笔画的 alpha 阈值（相对该图标最大 alpha）。
+     *
+     * <p>三星的 {@code stat_sys_data_in/out} 每个都自带一条半透明的「活动拖尾」笔画
+     * （实机像素 RGB 148~202，落在背景 85 与墨色 243 之间）。两个资源各画一次 ⇒
+     * 屏幕上 4 个箭头样图形。阈值把拖尾裁掉，只留主体箭头。
+     *
+     * <p>取值 0.85：实测拖尾峰值 alpha ≈ 0.74（202/243），主体笔画为 1.0。
+     */
+    private static final float SOLID_ALPHA = 0.85f;
+
     /** 资源 id → 墨迹。 */
     private static final SparseArray<Shape> sShapes = new SparseArray<>();
 
@@ -94,33 +105,46 @@ final class TrioSystemIcon {
             full.getPixels(px, 0, bw, 0, 0, bw, bh);
             full.recycle();
             int maxA = 0;
+            for (int i = 0; i < px.length; i++) {
+                final int a = (px[i] >>> 24);
+                if (a > maxA) {
+                    maxA = a;
+                }
+            }
+            if (maxA <= 0) {
+                return null;
+            }
+            // ★ L80：阈值裁掉「暗笔画」。
+            //   三星的 stat_sys_data_in / stat_sys_data_out 每个都自带一条半透明的
+            //   活动拖尾笔画（实机像素 177/180/193 那种灰），两个资源各画一次 ⇒
+            //   屏幕上出现 4 个箭头样图形（用户实测"信号4个箭头"）。
+            //   只留接近满不透明的主体笔画，拖尾自然消失。
+            final int cut = Math.round(maxA * SOLID_ALPHA);
             int minX = bw;
             int minY = bh;
             int maxX = -1;
             int maxY = -1;
             for (int i = 0; i < px.length; i++) {
                 final int a = (px[i] >>> 24);
-                if (a > maxA) {
-                    maxA = a;
+                if (a < cut) {
+                    continue;
                 }
-                if (a > 8) {
-                    final int x = i % bw;
-                    final int y = i / bw;
-                    if (x < minX) {
-                        minX = x;
-                    }
-                    if (x > maxX) {
-                        maxX = x;
-                    }
-                    if (y < minY) {
-                        minY = y;
-                    }
-                    if (y > maxY) {
-                        maxY = y;
-                    }
+                final int x = i % bw;
+                final int y = i / bw;
+                if (x < minX) {
+                    minX = x;
+                }
+                if (x > maxX) {
+                    maxX = x;
+                }
+                if (y < minY) {
+                    minY = y;
+                }
+                if (y > maxY) {
+                    maxY = y;
                 }
             }
-            if (maxX < 0 || maxA <= 0) {
+            if (maxX < 0) {
                 return null;
             }
             final int w = maxX - minX + 1;
@@ -129,7 +153,8 @@ final class TrioSystemIcon {
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     final int a = (px[(y + minY) * bw + (x + minX)] >>> 24);
-                    final int na = Math.min(255, Math.round(a * 255f / maxA));
+                    // 主体笔画一律画成满不透明 —— 浓淡只由墨色定，与 5G 文字同色。
+                    final int na = (a >= cut) ? 255 : 0;
                     out[y * w + x] = (na << 24) | 0x00FFFFFF;
                 }
             }

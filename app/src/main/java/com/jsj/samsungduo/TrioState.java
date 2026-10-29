@@ -998,6 +998,13 @@ final class TrioState {
                         dataSlot = slot;
                         type = networkTypeLabel(tel, subId);
                     }
+                    // ★ L80 修复：这一行是 591107d 误删的 —— 少了它 levels[] 永远是 -1，
+                    //   信号格档位取不到，4 个点全灰（用户实测"信号4个点白色不亮了"）。
+                    //   只记数据卡的原始读数，避免双卡时被非数据卡覆盖。
+                    if (slot < 0 || slot >= SIM_SLOTS) {
+                        continue;
+                    }
+                    levels[slot] = levelOf(tel, subId);
                     if (subId == dataSubId) {
                         // 由 levelOf 内部写入 sLastRaw*
                     }
@@ -1714,6 +1721,20 @@ final class TrioState {
      */
     static android.content.res.Resources getSystemUiResources() {
         return (sContext != null) ? sContext.getResources() : null;
+    }
+
+    /**
+     * ★ L80：信号槽是否要画状态图标（飞机 / 数据上下箭头）。
+     *
+     * <p>飞行模式 ⇒ 画飞机；关移动数据但没飞行 ⇒ 画数据上下箭头 + 斜杠。
+     * 真正无服务（两者都不是）⇒ 留空，与现状一致。
+     *
+     * <p>圆环布局用它判断「类型槽是否被占用」（{@code TrioAppearance.Ring}）——
+     * 否则类型槽被当成空位，电量数字会顶进圈心（用户实测"开启飞行模式，圈内直接
+     * 变成了电量数字"）。
+     */
+    static boolean slotIconActive() {
+        return sAirplaneMode || !sMobileDataOn;
     }
 
     /**
