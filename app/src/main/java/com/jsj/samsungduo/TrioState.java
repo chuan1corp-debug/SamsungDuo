@@ -68,6 +68,14 @@ final class TrioState {
     static volatile String sMobileType = "";
     /** ★ 是否已取到过非空网络类型：用于「无服务/飞行模式」时清空旧 5G，避免残留。 */
     static volatile boolean sMobileTypeSeen = false;
+
+    /** ★ L77：飞行模式 / 移动数据 开关状态（渲染层读，区分飞机 vs 数据箭头）。 */
+    static volatile boolean sAirplaneMode = false;
+    static volatile boolean sMobileDataOn = true;
+    /** ★ L77：三星状态栏图标资源 id（getIdentifier 缓存，0=未取到）。 */
+    static int sAirplaneResId = 0;
+    static int sDataResId = 0;
+    static boolean sIconResInit = false;
     static final int SIM_SLOTS = 2;
     static volatile int[] sSlotLevels = { -1, -1 };
     static volatile int sDataSlot = -1;
@@ -1018,6 +1026,12 @@ final class TrioState {
         } else if (sMobileTypeSeen) {
             sMobileType = "";
         }
+        // ★ L77：缓存飞行 / 移动数据开关状态，渲染层据此在信号槽画飞机 / 数据箭头。
+        //   注意：这两个是「原始开关状态」，不被上面的 type 清空影响 —— 飞行时 type
+        //   已空，但 sAirplaneMode 仍为真，渲染才区分得出飞机 vs 数据箭头。
+        sAirplaneMode = isAirplaneModeOn(context);
+        sMobileDataOn = isMobileDataOn(context);
+        ensureIconRes();
         // ★ v56：首次采样成功后，**只读** dump 一次真实阈值配置。
         //   不改任何显示逻辑；跑在独立线程，避免在 UI 线程做上百次文件写。
         //   若这一轮读到的配置不可用（subId 还是 -1 / 配置未加载），
@@ -1689,6 +1703,36 @@ final class TrioState {
             return true;
         }
     }
+
+    /**
+     * ★ L77：取 SystemUI 进程的 Resources（模块就跑在 SystemUI 进程，sContext 即
+     *   SystemUI 的 Application Context，其 Resources 能直接解析 com.android.systemui
+     *   包的资源）。用于 getIdentifier 提取三星原生图标。
+     */
+    static android.content.res.Resources getSystemUiResources() {
+        return (sContext != null) ? sContext.getResources() : null;
+    }
+
+    /**
+     * ★ L77：缓存三星飞机 / 数据箭头图标资源 id（只跑一次）。
+     *   真名来自实机枚举：飞机 = stat_sys_airplane_mode，数据上下箭头 = tw_ic_do_mobiledata。
+     */
+    static void ensureIconRes() {
+        if (sIconResInit) {
+            return;
+        }
+        sIconResInit = true;
+        try {
+            final android.content.res.Resources res = getSystemUiResources();
+            if (res == null) {
+                return;
+            }
+            sAirplaneResId = res.getIdentifier("stat_sys_airplane_mode", "drawable", "com.android.systemui");
+            sDataResId = res.getIdentifier("tw_ic_do_mobiledata", "drawable", "com.android.systemui");
+        } catch (Throwable ignored) {
+        }
+    }
+
 
     /** 把数据卡的网络类型映射成状态栏标签："5G"/"4G"/"H+"/"3G"/"E"/"2G"，未知为空。 */
     private static String networkTypeLabel(TelephonyManager tel, int subId) {

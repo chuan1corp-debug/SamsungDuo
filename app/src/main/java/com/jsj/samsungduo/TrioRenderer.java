@@ -2130,7 +2130,15 @@ final class TrioRenderer {
     private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
                                         TrioAppearance a, float cx, float cy,
                                         float heightHint) {
+        // ★ L77：信号槽空时按状态画图标（飞行=飞机 / 关数据但没飞行=数据箭头+斜线）。
+        //   真正无服务（type 空且非飞行非关数据）仍留空，与现状一致。
         if (type == null || type.isEmpty()) {
+            if (TrioState.sAirplaneMode) {
+                drawSystemIcon(c, TrioState.sAirplaneResId, cx, cy, heightHint, fg, -90f);
+            } else if (!TrioState.sMobileDataOn) {
+                drawSystemIcon(c, TrioState.sDataResId, cx, cy, heightHint, fg, 0f);
+                drawDiagonalSlash(c, cx, cy, heightHint, fg, stroke);
+            }
             return;
         }
         applyWeight(a.typeWeight);
@@ -2141,6 +2149,50 @@ final class TrioRenderer {
                 effectiveHeightLimit(heightHint, stroke));
         drawType(c, type, cx, cy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f,
                 size, fg, a, a.typeSuffixScale);
+    }
+
+    /**
+     * ★ L77：提取三星原生 drawable，tint 成墨色画进信号槽位。
+     * rotateDeg = 逆时针旋转角度（飞机要求向左旋转 90° = -90）。
+     */
+    private static void drawSystemIcon(Canvas c, int resId, float cx, float cy, float h,
+                                       int fg, float rotateDeg) {
+        if (resId == 0) {
+            return;
+        }
+        try {
+            final android.content.res.Resources res = TrioState.getSystemUiResources();
+            if (res == null) {
+                return;
+            }
+            final android.graphics.drawable.Drawable d = res.getDrawable(resId, null);
+            if (d == null) {
+                return;
+            }
+            d.mutate();
+            d.setTintList(android.content.res.ColorStateList.valueOf(fg));
+            final int side = Math.round(h * 0.9f);
+            d.setBounds(-side / 2, -side / 2, side / 2, side / 2);
+            final int save = c.save();
+            c.translate(cx, cy);
+            if (rotateDeg != 0f) {
+                c.rotate(rotateDeg);
+            }
+            d.draw(c);
+            c.restoreToCount(save);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** ★ L77：数据关闭态，在图标之上叠一条对角线（禁用符样式，左上→右下）。 */
+    private static void drawDiagonalSlash(Canvas c, float cx, float cy, float h, int fg,
+                                          float stroke) {
+        final float d = h * 0.42f;
+        FILL.setStyle(Paint.Style.STROKE);
+        FILL.setStrokeWidth(Math.max(stroke * 0.5f, 1.5f));
+        FILL.setColor(fg);
+        c.drawLine(cx - d, cy - d, cx + d, cy + d, FILL);
+        FILL.setStyle(Paint.Style.FILL);
     }
 
     /** 读数字号：用户设定、高度上限、槽宽三者里取最紧。 */
