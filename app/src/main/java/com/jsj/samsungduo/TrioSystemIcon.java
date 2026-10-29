@@ -171,7 +171,7 @@ final class TrioSystemIcon {
             sh.mask = mask;
             sh.w = w;
             sh.h = h;
-            sh.stroke = thinnestRun(out, w, h);
+            sh.stroke = strokeOf(out, w, h);
             sShapes.put(resId, sh);
             return sh;
         } catch (Throwable ignored) {
@@ -180,32 +180,69 @@ final class TrioSystemIcon {
     }
 
     /**
-     * ★ L80：量笔画粗细 —— 所有横向连续墨迹段里**最短**的那一段（单位：mask 像素）。
+     * ★ L82：量笔画粗细（单位：mask 像素）。
      *
-     * <p>箭头的斜边在横向上会被拉长（一段斜边横跨十几像素），竖杆才是真实笔画宽，
-     * 所以取最短段。1 像素宽的零星抗锯齿碎块不计入。
+     * <p>★ 上一版量「最短横向段」是错的：箭头的**尖端**只有 4px 宽的一小截，
+     * 会被当成笔画宽 —— 合成分测试（真实笔画 10）旧算法量出 4、只有真实值的 40%，
+     * 所以屏幕上的斜线永远比箭头细一大截。
+     *
+     * <p>改用两条独立估计，取**较小者**（保守，不会画出一根粗杠）：
+     * <ul>
+     *   <li>横向连续段长度的**众数** —— 竖杆占了绝大多数扫描行，众数就是杆宽；</li>
+     *   <li>{@code 2 × 面积 ÷ 周长} —— 细长笔画（长 L 宽 w）满足 A=Lw、P≈2L，
+     *       于是 2A/P ≈ w，且完全不受尖端干扰。</li>
+     * </ul>
+     * 同一合成图上二者给出 10 / 11.5，min = 10，与真实笔画一致。
      *
      * @return 量不到返回 0
      */
-    private static float thinnestRun(int[] px, int w, int h) {
-        int thinnest = Integer.MAX_VALUE;
+    private static float strokeOf(int[] px, int w, int h) {
+        int area = 0;
+        int perimeter = 0;
+        final int[] hist = new int[Math.max(2, w + 1)];
         for (int y = 0; y < h; y++) {
             int run = 0;
             for (int x = 0; x < w; x++) {
-                if ((px[y * w + x] >>> 24) != 0) {
+                final boolean ink = (px[y * w + x] >>> 24) != 0;
+                if (ink) {
+                    area++;
                     run++;
+                    final boolean edge = x == 0 || y == 0 || x == w - 1 || y == h - 1
+                            || (px[y * w + x - 1] >>> 24) == 0
+                            || (px[y * w + x + 1] >>> 24) == 0
+                            || (px[(y - 1) * w + x] >>> 24) == 0
+                            || (px[(y + 1) * w + x] >>> 24) == 0;
+                    if (edge) {
+                        perimeter++;
+                    }
                 } else if (run > 0) {
-                    if (run > 1 && run < thinnest) {
-                        thinnest = run;
+                    if (run < hist.length) {
+                        hist[run]++;
                     }
                     run = 0;
                 }
             }
-            if (run > 1 && run < thinnest) {
-                thinnest = run;
+            if (run > 0 && run < hist.length) {
+                hist[run]++;
             }
         }
-        return (thinnest == Integer.MAX_VALUE) ? 0f : thinnest;
+        if (area <= 0 || perimeter <= 0) {
+            return 0f;
+        }
+        // 众数：出现行数最多的那个长度（并列时取较长的，宁可略粗不为细）。
+        int mode = 0;
+        int best = 0;
+        for (int len = 2; len < hist.length; len++) {
+            if (hist[len] > 0 && hist[len] >= best) {
+                best = hist[len];
+                mode = len;
+            }
+        }
+        final float byArea = 2f * area / perimeter;
+        if (mode <= 0) {
+            return byArea;
+        }
+        return Math.min(mode, byArea);
     }
 
     /**

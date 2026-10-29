@@ -54,6 +54,8 @@ final class TrioRenderer {
      * 两端各超出箭头外缘约 7%，像把整组划掉。
      */
     private static final float SLASH_SPAN = 1.15f;
+    /** ★ L82：无信号斜杠的颜色（用户指定用红色，与白色箭头区分）。 */
+    private static final int SLASH_COLOR = 0xFFFF3B30;
     private static final Path BOLT = buildBolt();
     private static final Path WIFI_DOT = buildWifiDot();
     private static final RectF ARC = new RectF();
@@ -2265,29 +2267,27 @@ final class TrioRenderer {
         if (wOut > 0f) {
             TrioSystemIcon.draw(c, outId, x + wOut * 0.5f, cy, arrowH, fg, 0f);
         }
-        // ★ L80：斜杠 —— 10°、横跨整组箭头并两端各出一点头（详见 drawDiagonalSlash）。
+        // ★ L82：斜杠 —— 10°、横跨整组箭头并两端各出一点头（详见 drawDiagonalSlash）。
         //   线宽取箭头的**实测笔画宽**，斜线才不会比箭头细一圈。
         drawDiagonalSlash(c, cx, cy,
-                TrioSystemIcon.strokeWidth(outId != 0 ? outId : inId, arrowH),
-                fg, totalW);
+                TrioSystemIcon.strokeWidth(outId != 0 ? outId : inId, arrowH), totalW);
     }
 
     /**
-     * ★ L80：在图标之上叠一条斜杠（禁用符样式，左上 → 右下）。
+     * ★ L82：在箭头之上叠一条红色斜杠（禁用符样式，左上 → 右下）。
      *
      * <ul>
+     *   <li>颜色固定红（用户指定），与白色箭头区分；</li>
      *   <li>角度固定 10°（用户参考图认可的角度）；</li>
      *   <li>横向跨过整组箭头并两端各出一点头；</li>
      *   <li>以箭头组中心对称（不再一头长一头短）；</li>
-     *   <li>线宽 = 箭头自己的笔画宽（由 {@link TrioSystemIcon#strokeWidth} 量出来），
-     *       不再拍一个固定比例 —— 拍出来的那个数总比箭头细。</li>
+     *   <li>线宽 = 箭头自己的笔画宽（由 {@link TrioSystemIcon#strokeWidth} 量出来）。</li>
      * </ul>
      *
      * @param w     斜杠线宽（与箭头笔画同宽）
      * @param spanW 箭头组总宽；斜杠实际横跨 = spanW × SLASH_SPAN
      */
-    private static void drawDiagonalSlash(Canvas c, float cx, float cy, float w, int fg,
-                                          float spanW) {
+    private static void drawDiagonalSlash(Canvas c, float cx, float cy, float w, float spanW) {
         if (spanW <= 0f || w <= 0f) {
             return;
         }
@@ -2297,7 +2297,7 @@ final class TrioRenderer {
         FILL.setStyle(Paint.Style.STROKE);
         FILL.setStrokeWidth(w);
         FILL.setStrokeCap(Paint.Cap.ROUND);
-        FILL.setColor(fg);
+        FILL.setColor(SLASH_COLOR);
         c.drawLine(cx - halfW, cy - halfH, cx + halfW, cy + halfH, FILL);
         // FILL 是共享画笔，用完还原，别把圆头带给下一位使用者。
         FILL.setStrokeCap(Paint.Cap.BUTT);
