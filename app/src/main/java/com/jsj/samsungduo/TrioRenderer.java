@@ -2130,15 +2130,10 @@ final class TrioRenderer {
     private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
                                         TrioAppearance a, float cx, float cy,
                                         float heightHint) {
-        // ★ L77：信号槽空时按状态画图标（飞行=飞机 / 关数据但没飞行=数据箭头+斜线）。
+        // ★ L79：信号槽空时按状态画图标（飞行=飞机 / 关数据但没飞行=数据箭头+斜线）。
         //   真正无服务（type 空且非飞行非关数据）仍留空，与现状一致。
         if (type == null || type.isEmpty()) {
-            if (TrioState.sAirplaneMode) {
-                drawSystemIcon(c, TrioState.sAirplaneResId, cx, cy, heightHint, fg, -90f);
-            } else if (!TrioState.sMobileDataOn) {
-                drawSystemIcon(c, TrioState.sDataResId, cx, cy, heightHint, fg, 0f);
-                drawDiagonalSlash(c, cx, cy, heightHint, fg, stroke);
-            }
+            drawSignalStateIcon(c, cx, cy, stroke, fg, a, heightHint);
             return;
         }
         applyWeight(a.typeWeight);
@@ -2152,46 +2147,99 @@ final class TrioRenderer {
     }
 
     /**
-     * ★ L77：提取三星原生 drawable，tint 成墨色画进信号槽位。
-     * rotateDeg = 逆时针旋转角度（飞机要求向左旋转 90° = -90）。
+     * ★ L79：状态图标在给定 cap 高下的总宽（排位用）。
+     *
+     * <p>与 {@link #drawSignalStateIcon} 同一套尺寸口径 —— 排位算的宽和画出来的宽
+     * 必须是同一个数，否则闪电与图标会错开。
      */
-    private static void drawSystemIcon(Canvas c, int resId, float cx, float cy, float h,
-                                       int fg, float rotateDeg) {
-        if (resId == 0) {
+    private static float signalStateIconWidth(float capH) {
+        final float inkH = capH * 1.12f;
+        if (TrioState.sAirplaneMode) {
+            return TrioSystemIcon.onScreenWidth(TrioState.sAirplaneResId, inkH, -90f);
+        }
+        if (!TrioState.sMobileDataOn) {
+            final float arrowH = inkH * 0.86f;
+            final float gap = inkH * 0.10f;
+            return TrioSystemIcon.onScreenWidth(TrioState.sDataOutResId, arrowH, 0f)
+                    + gap
+                    + TrioSystemIcon.onScreenWidth(TrioState.sDataInResId, arrowH, 0f);
+        }
+        return 0f;
+    }
+
+    /**
+     * ★ L79：信号槽在「无服务」时的状态图标。
+     *
+     * <p>高度用**同一格里 5G 文字的 cap 高**（{@code CAP_ICON_H} 口径），
+     * 而不是 em 值 —— em 是字号，图标按 em 画会跟文字差一个比例。
+     * 飞行模式画三星飞机（向左转 90°）；关移动数据画三星上下箭头 + 一条斜杠。
+     *
+     * @param heightHint 该车道的高度提示（-1 = 内部自带上限，其余是开口 em 值）
+     */
+    private static void drawSignalStateIcon(Canvas c, float cx, float cy, float stroke,
+                                             int fg, TrioAppearance a, float heightHint) {
+        // 内部右列（heightHint = -1）与缺口带的可用高度不同，分别取。
+        final float capH = (heightHint < 0f)
+                ? Math.min(TrioGeometry.CAP_ICON_H, TrioGeometry.capInteriorHeight(stroke))
+                : TrioGeometry.capOpeningTextRoomH(stroke);
+        final float inkH = capH * 1.12f;
+        if (TrioState.sAirplaneMode) {
+            TrioSystemIcon.draw(c, TrioState.sAirplaneResId, cx, cy, inkH, fg, -90f);
             return;
         }
-        try {
-            final android.content.res.Resources res = TrioState.getSystemUiResources();
-            if (res == null) {
-                return;
-            }
-            final android.graphics.drawable.Drawable d = res.getDrawable(resId, null);
-            if (d == null) {
-                return;
-            }
-            d.mutate();
-            d.setTintList(android.content.res.ColorStateList.valueOf(fg));
-            final int side = Math.round(h * 0.9f);
-            d.setBounds(-side / 2, -side / 2, side / 2, side / 2);
-            final int save = c.save();
-            c.translate(cx, cy);
-            if (rotateDeg != 0f) {
-                c.rotate(rotateDeg);
-            }
-            d.draw(c);
-            c.restoreToCount(save);
-        } catch (Throwable ignored) {
+        if (!TrioState.sMobileDataOn) {
+            drawDataArrows(c, cx, cy, inkH, fg, stroke);
         }
     }
 
-    /** ★ L77：数据关闭态，在图标之上叠一条对角线（禁用符样式，左上→右下）。 */
+    /**
+     * ★ L79：关移动数据时的图标 —— 三星自己的**上下箭头**（stat_sys_data_out 上 /
+     * stat_sys_data_in 下），中间再叠一条斜杠。
+     *
+     * <p>★ L79 修正：上一版用的是 tw_ic_do_mobiledata，那本身就是「圆圈+斜杠」的
+     * 禁行样式（用户实机看到"圈加斜杠"），不是要的上下箭头。
+     */
+    private static void drawDataArrows(Canvas c, float cx, float cy, float inkH, int fg,
+                                       float stroke) {
+        final int outId = TrioState.sDataOutResId;
+        final int inId = TrioState.sDataInResId;
+        if (outId == 0 && inId == 0) {
+            return;
+        }
+        // 两个箭头并排：各占一部分高，中间留一点缝。
+        final float arrowH = inkH * 0.86f;
+        final float gap = inkH * 0.10f;
+        final float wOut = TrioSystemIcon.onScreenWidth(outId, arrowH, 0f);
+        final float wIn = TrioSystemIcon.onScreenWidth(inId, arrowH, 0f);
+        if (wOut <= 0f && wIn <= 0f) {
+            return;
+        }
+        final float totalW = wOut + gap + wIn;
+        float x = cx - totalW * 0.5f;
+        if (wOut > 0f) {
+            TrioSystemIcon.draw(c, outId, x + wOut * 0.5f, cy, arrowH, fg, 0f);
+        }
+        x += wOut + gap;
+        if (wIn > 0f) {
+            TrioSystemIcon.draw(c, inId, x + wIn * 0.5f, cy, arrowH, fg, 0f);
+        }
+        // 斜杠：跨过整组箭头（左上 → 右下）。
+        drawDiagonalSlash(c, cx, cy, inkH, fg, stroke, totalW);
+    }
+
+    /**
+     * ★ L79：在图标之上叠一条斜杠（禁用符样式，左上 → 右下）。
+     *
+     * @param spanW 这条斜杠要跨过的总宽（箭头组的宽），0 = 按高度取
+     */
     private static void drawDiagonalSlash(Canvas c, float cx, float cy, float h, int fg,
-                                          float stroke) {
-        final float d = h * 0.42f;
+                                          float stroke, float spanW) {
+        final float halfH = h * 0.42f;
+        final float halfW = (spanW > 0f) ? spanW * 0.5f : halfH;
         FILL.setStyle(Paint.Style.STROKE);
         FILL.setStrokeWidth(Math.max(stroke * 0.5f, 1.5f));
         FILL.setColor(fg);
-        c.drawLine(cx - d, cy - d, cx + d, cy + d, FILL);
+        c.drawLine(cx - halfW, cy - halfH, cx + halfW, cy + halfH, FILL);
         FILL.setStyle(Paint.Style.FILL);
     }
 
@@ -2273,6 +2321,12 @@ final class TrioRenderer {
         }
         if (mate == Prefs.PART_TYPE) {
             final String type = (mobileType == null) ? "" : mobileType;
+            // ★ L79：同伴是信号时，飞行/关数据也要画图标 —— 上一版只改了单件，
+            //   同伴这条路径没动，开飞行时整格空白。
+            if (type.isEmpty()) {
+                drawSignalStateIcon(c, cx, cy, stroke, fg, a, -1f);
+                return;
+            }
             drawType(c, type, cx, cy + capH * 0.5f, capH / TrioGeometry.CAP_HEIGHT_RATIO,
                     fg, a, a.typeSuffixScale);
             return;
@@ -2327,11 +2381,16 @@ final class TrioRenderer {
         applyWeight(mate == Prefs.PART_TYPE ? a.typeWeight : a.valueWeight);
         TEXT.setTextSize(size);
         if (mate == Prefs.PART_TYPE) {
+            // ★ L79：信号无字（飞行/关数据）时，同伴这一格画的是图标而不是文字 ——
+            //   排位宽度必须按图标的实际宽算，否则闪电和图标会叠在一起。
+            final String type = (mobileType == null) ? "" : mobileType;
+            if (type.isEmpty()) {
+                return signalStateIconWidth(size * TrioGeometry.CAP_HEIGHT_RATIO);
+            }
             // ★ 与圆环 measureType / drawType 完全同款：base 和 A 分别测量再相加。
             //   旧算法 base+(full-base)*scale/100 靠"5GA"整体测量反推 A 宽，
             //   与 drawType 里 baseWidth+suffixWidth 的算法存在字距差，
             //   pair 排布时闪电与 5GA 块之间就会差出这一点（用户实测 A 甩飞）。
-            final String type = (mobileType == null) ? "" : mobileType;
             if (!TrioGeometry.hasShrunkSuffix(type, a.typeSuffixScale)) {
                 return TEXT.measureText(type);
             }

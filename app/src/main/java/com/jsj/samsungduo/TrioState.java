@@ -74,7 +74,10 @@ final class TrioState {
     static volatile boolean sMobileDataOn = true;
     /** ★ L77：三星状态栏图标资源 id（getIdentifier 缓存，0=未取到）。 */
     static int sAirplaneResId = 0;
-    static int sDataResId = 0;
+    /** ★ L79：三星数据**上行**箭头（stat_sys_data_out）。 */
+    static int sDataOutResId = 0;
+    /** ★ L79：三星数据**下行**箭头（stat_sys_data_in）。 */
+    static int sDataInResId = 0;
     static boolean sIconResInit = false;
     static final int SIM_SLOTS = 2;
     static volatile int[] sSlotLevels = { -1, -1 };
@@ -1715,7 +1718,12 @@ final class TrioState {
 
     /**
      * ★ L77：缓存三星飞机 / 数据箭头图标资源 id（只跑一次）。
-     *   真名来自实机枚举：飞机 = stat_sys_airplane_mode，数据上下箭头 = tw_ic_do_mobiledata。
+     *   真名来自实机枚举（见 SamsungDuo_resdump(2).log 的 candidate probe 段）：
+     *   飞机 = stat_sys_airplane_mode（0x7e081780）、
+     *   数据上下行箭头 = stat_sys_data_out（0x7e08181c）/ stat_sys_data_in（0x7e081803）。
+     *
+     * <p>★ L79：原用的 tw_ic_do_mobiledata 是「圆圈+斜杠」的禁行样式，不是要的上下箭头，
+     *   换掉。
      */
     static void ensureIconRes() {
         if (sIconResInit) {
@@ -1728,8 +1736,21 @@ final class TrioState {
                 return;
             }
             sAirplaneResId = res.getIdentifier("stat_sys_airplane_mode", "drawable", "com.android.systemui");
-            sDataResId = res.getIdentifier("tw_ic_do_mobiledata", "drawable", "com.android.systemui");
+            sDataOutResId = res.getIdentifier("stat_sys_data_out", "drawable", "com.android.systemui");
+            sDataInResId = res.getIdentifier("stat_sys_data_in", "drawable", "com.android.systemui");
         } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * ★ L79：三星资源的主题 —— 三星的 stat_sys_* 是矢量图，fillColor 走主题属性，
+     *   不给主题会解析成默认色（灰），所以要带主题取。
+     */
+    static android.content.res.Resources.Theme getSystemUiTheme() {
+        try {
+            return (sContext != null) ? sContext.getTheme() : null;
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
