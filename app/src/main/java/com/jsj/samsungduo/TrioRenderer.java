@@ -12,19 +12,26 @@ import android.view.View;
 import java.util.Calendar;
 import java.util.Locale;
 
-/**
- * Draws the "trio" glyph (battery ring + Wi-Fi arcs + signal dots + level indicator)
- * into a host view's canvas, in the 120x120 design space of {@link TrioGeometry}.
- */
 final class TrioRenderer {
+
+    // =========================================================
+    // 🌟 自定义微调区：你只需要改这三个数字即可！
+    // =========================================================
+    // 1. 电量字体大小缩放：1.0f 代表跟时间一样大，0.8f 代表稍小一点
+    private static final float CUSTOM_LEVEL_SIZE_SCALE = 0.9f; 
+    
+    // 2. 电量上下位置微调：负数往屏幕上方移，正数往胶囊内部移（默认 0f 刚好在缺口里）
+    private static final float CUSTOM_LEVEL_Y_OFFSET = 2f; 
+    
+    // 3. 胶囊顶部开口宽度：数字越大，中间断开的缺口越宽（默认 30f）
+    private static final float CUSTOM_TOP_GAP_WIDTH = 35f; 
+    // =========================================================
 
     private TrioRenderer() {
     }
 
-    /** Whether the user's clock is 24-hour; null until the host tells us. */
     private static Boolean sIs24Hour;
 
-    /** Called by the host with the system's 12/24-hour setting. */
     static void set24Hour(boolean is24Hour) {
         sIs24Hour = Boolean.valueOf(is24Hour);
     }
@@ -1038,7 +1045,7 @@ final class TrioRenderer {
     }
 
     // =========================================================
-    // ★ 修改区：修改了胶囊布局（时间左侧，网络右侧，电量上方居中）
+    // ★ 核心修改：顶部中间断开，电量填入缺口
     // =========================================================
     private static void drawCapsuleLayout(Canvas canvas, int level, boolean charging,
                                           boolean quickCharging, int wifiLevel, int mobileLevel,
@@ -1048,13 +1055,23 @@ final class TrioRenderer {
         final TrioAppearance.Capsule cap =
                 a.capsule(level, charging, wifiLevel, mobileType, sims);
 
-        STROKE.setStrokeWidth(stroke);
-        STROKE.setStyle(Paint.Style.STROKE);
-        final float topReach =
-                openingReach(cap, TrioAppearance.Zone.TOP, stroke, level, mobileType, a);
+        // 1. 计算电量文字，为了给顶部开口留出空间
+        String levelText = String.valueOf(level);
+        applyWeight(a.valueWeight);
+        float levelSize = capsuleTextSize(levelText, a.valueSize, stroke,
+                TrioGeometry.capOpeningWidth(), 100,
+                TrioGeometry.capTextMaxSize(stroke)) * CUSTOM_LEVEL_SIZE_SCALE;
+        
+        // 强制顶部开口！使用自定义的宽度
+        final float topReach = CUSTOM_TOP_GAP_WIDTH;
+
         final float bottomReach =
                 openingReach(cap, TrioAppearance.Zone.BOTTOM, stroke, level, mobileType, a);
+
+        STROKE.setStrokeWidth(stroke);
+        STROKE.setStyle(Paint.Style.STROKE);
         final Path outline = new Path();
+        // buildCapsuleOutline 会根据 topReach 把顶部的线切断
         buildCapsuleOutline(outline, topReach, bottomReach, a.capsuleShape);
         STROKE.setColor(withAlpha(fg, a.trackAlpha));
         canvas.drawPath(outline, STROKE);
@@ -1071,12 +1088,12 @@ final class TrioRenderer {
 
         final float interiorCy = TrioGeometry.capInteriorCy(stroke);
 
-        // 1. 时间固定在左侧槽位
+        // 2. 时间固定在左侧槽位
         drawCapsuleTime(canvas, stroke, fg, a,
                 TrioGeometry.capTimeCx(stroke, TrioGeometry.capsuleTimeSide()),
                 interiorCy, -1f);
 
-        // 2. 网络状态（WiFi 或 5G/4G）固定在右侧槽位
+        // 3. 网络状态固定在右侧槽位
         String netText = "";
         if (wifiLevel >= 0) {
             netText = "WiFi";
@@ -1085,43 +1102,32 @@ final class TrioRenderer {
         }
 
         if (!netText.isEmpty()) {
-            applyWeight(a.valueWeight);
-            float size = capsuleTextSize(netText, a.valueSize, stroke,
+            float netSize = capsuleTextSize(netText, a.valueSize, stroke,
                     TrioGeometry.capValueSlotWidth(stroke), 100,
                     TrioGeometry.capTextMaxSize(stroke));
-            TEXT.setTextSize(size);
+            TEXT.setTextSize(netSize);
             TEXT.setColor(fg);
             TEXT.setTextAlign(Paint.Align.CENTER);
             float netCx = TrioGeometry.capValueCx(stroke, TrioGeometry.capsuleTimeSide());
-            canvas.drawText(netText, netCx, interiorCy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f, TEXT);
+            canvas.drawText(netText, netCx, interiorCy + (netSize * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f, TEXT);
         }
 
-        // 3. 电量强制定位于胶囊正上方居中
+        // 4. 电量填入中间的缺口
         if (level >= 0) {
-            String levelText = String.valueOf(level);
-            applyWeight(a.valueWeight);
-            // 字号稍微缩小一点，显得更精致
-            float size = capsuleTextSize(levelText, a.valueSize, stroke,
-                    TrioGeometry.capOpeningWidth(), 100,
-                    TrioGeometry.capTextMaxSize(stroke)) * 0.85f;
-            TEXT.setTextSize(size);
+            TEXT.setTextSize(levelSize);
             TEXT.setColor(fg);
             TEXT.setTextAlign(Paint.Align.CENTER);
             
-            Paint.FontMetrics fm = TEXT.getFontMetrics();
             float capMidX = TrioGeometry.CAP_INK_X + TrioGeometry.capInkW() * 0.5f;
-            // 文字底边贴在胶囊顶部 CAP_TOP 上方 2px 处
-            float levelCy = TrioGeometry.CAP_TOP - fm.descent - 2f;
+            // 将电量往下压，刚好嵌在缺口中间，可以通过 CUSTOM_LEVEL_Y_OFFSET 微调
+            float levelCy = TrioGeometry.CAP_TOP + (levelSize * TrioGeometry.CAP_HEIGHT_RATIO) + CUSTOM_LEVEL_Y_OFFSET;
             canvas.drawText(levelText, capMidX, levelCy, TEXT);
         }
 
-        // 4. 保留原有的顶部（如闪电）和底部（如信号点）绘制
+        // 5. 保留原有的顶部（如充电闪电）和底部（如信号点）绘制
+        // 注意：现在顶部是强制的缺口，如果正在充电，闪电也会画在这个缺口里，不用担心重叠
         drawCapsuleCell(canvas, stroke, TrioAppearance.Zone.TOP, cap, level, quickCharging,
                 wifiLevel, mobileType, fg, a);
-        
-        // ★ 注意：这里禁用了原来的 CENTRE 绘制，防止它画的旧内容与我们的时间/网络重叠
-        // drawCapsuleCell(canvas, stroke, TrioAppearance.Zone.CENTRE, cap, level, quickCharging,
-        //        wifiLevel, mobileType, fg, a);
         
         drawCapsuleCell(canvas, stroke, TrioAppearance.Zone.BOTTOM, cap, level, quickCharging,
                 wifiLevel, mobileType, fg, a);
