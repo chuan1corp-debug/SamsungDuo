@@ -15,16 +15,16 @@ import java.util.Locale;
 final class TrioRenderer {
 
     // =========================================================
-    // 🌟 自定义微调区：你只需要改这三个数字即可！
+    // 🌟 自定义微调区：以后如果还想微调，只改这三个数字即可！
     // =========================================================
-    // 1. 电量字体大小缩放：1.0f 代表跟时间一样大，0.8f 代表稍小一点
+    // 1. 电量字体大小缩放：1.0f 代表跟时间一样大，0.8f 代表稍小
     private static final float CUSTOM_LEVEL_SIZE_SCALE = 0.9f; 
     
-    // 2. 电量上下位置微调：负数往屏幕上方移，正数往胶囊内部移（默认 0f 刚好在缺口里）
-    private static final float CUSTOM_LEVEL_Y_OFFSET = 2f; 
+    // 2. 电量上下位置微调：负数往屏幕上方移，正数往胶囊内部移（默认 0f 刚好在缺口正中间）
+    private static final float CUSTOM_LEVEL_Y_OFFSET = 0f; 
     
-    // 3. 胶囊顶部开口宽度：数字越大，中间断开的缺口越宽（默认 30f）
-    private static final float CUSTOM_TOP_GAP_WIDTH = 35f; 
+    // 3. 胶囊顶部开口宽度：数字越大，中间断开的缺口越宽（默认 45f 足够放下 100%）
+    private static final float CUSTOM_TOP_GAP_WIDTH = 45f; 
     // =========================================================
 
     private TrioRenderer() {
@@ -1045,7 +1045,7 @@ final class TrioRenderer {
     }
 
     // =========================================================
-    // ★ 核心修改：顶部中间断开，电量填入缺口
+    // ★ 核心修改：顶部中间断开，电量精准填入缺口中心
     // =========================================================
     private static void drawCapsuleLayout(Canvas canvas, int level, boolean charging,
                                           boolean quickCharging, int wifiLevel, int mobileLevel,
@@ -1112,20 +1112,26 @@ final class TrioRenderer {
             canvas.drawText(netText, netCx, interiorCy + (netSize * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f, TEXT);
         }
 
-        // 4. 电量填入中间的缺口
+        // 4. 电量精准填入中间的缺口
         if (level >= 0) {
             TEXT.setTextSize(levelSize);
             TEXT.setColor(fg);
             TEXT.setTextAlign(Paint.Align.CENTER);
             
-            float capMidX = TrioGeometry.CAP_INK_X + TrioGeometry.capInkW() * 0.5f;
-            // 将电量往下压，刚好嵌在缺口中间，可以通过 CUSTOM_LEVEL_Y_OFFSET 微调
-            float levelCy = TrioGeometry.CAP_TOP + (levelSize * TrioGeometry.CAP_HEIGHT_RATIO) + CUSTOM_LEVEL_Y_OFFSET;
+            // X轴：绝对中心（直接使用胶囊左边和右边的物理中点）
+            float capMidX = (TrioGeometry.CAP_LEFT + TrioGeometry.capRight()) * 0.5f;
+            
+            // Y轴：使用 FontMetrics 计算，让文字的视觉中心死死钉在 CAP_TOP (断口) 这条线上
+            Paint.FontMetrics fm = TEXT.getFontMetrics();
+            float centerY = TrioGeometry.CAP_TOP - (fm.ascent + fm.descent) / 2f;
+            
+            // 加上你自定义的上下偏移量
+            float levelCy = centerY + CUSTOM_LEVEL_Y_OFFSET;
+            
             canvas.drawText(levelText, capMidX, levelCy, TEXT);
         }
 
         // 5. 保留原有的顶部（如充电闪电）和底部（如信号点）绘制
-        // 注意：现在顶部是强制的缺口，如果正在充电，闪电也会画在这个缺口里，不用担心重叠
         drawCapsuleCell(canvas, stroke, TrioAppearance.Zone.TOP, cap, level, quickCharging,
                 wifiLevel, mobileType, fg, a);
         
